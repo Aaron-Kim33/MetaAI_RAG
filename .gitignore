@@ -1,0 +1,16 @@
+# 1. 가상환경 및 라이브러리 (이미 넣으신 것)
+venv/
+.env
+
+# 2. ⭐️ 데이터 및 DB (절대 올라가면 안 됨)
+meta_brain/
+*.txt
+!README.md
+!requirements.txt
+
+# 3. OS 및 파이썬 캐시
+__pycache__/
+.DS_Store
+
+# 4. 도커 관련 (로컬 데이터 제외)
+.dockerignore
