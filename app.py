@@ -1,6 +1,7 @@
 import os
 import time
 import random
+import re
 import chromadb
 import ollama
 from bs4 import BeautifulSoup
@@ -145,18 +146,50 @@ def auto_learn(start_url):
 
 # 3. 답변 생성 (RAG)
 def ask_a1(question, client):
-    results = collection.query(query_texts=[question], n_results=3)
-    context = "\n".join(results['documents'][0]) if results['documents'][0] else "데이터 없음"
-    
-    response = client.chat(model='llama3.2:1b', messages=[
-        {'role': 'system', 'content': f'너는 메타 비즈니스 전문가 A1이야. 다음 지식을 참고해서 한국어로 답해:\n{context}'},
-        {'role': 'user', 'content': question},
-    ])
-    return response['message']['content']
+    try:
+        # 1. 문자열 변환 및 특수문자 제거
+        raw_text = str(question[0]) if isinstance(question, list) else str(question)
+        
+        # 'clean_question'으로 이름을 통일합니다.
+        clean_question = re.sub(r'[^가-힣a-zA-Z0-9\s.?!\'\"%]', '', raw_text).strip()
+
+        print(f"DEBUG: 정제된 질문 -> '{clean_question}' (Type: {type(clean_question)})")
+
+        if not clean_question:
+            return "질문이 비어있습니다."
+
+        # 2. 컬렉션 로드 (학습 시와 동일한 이름 확인)
+        curr_collection = chroma_client.get_or_create_collection(name="meta_knowledge_base")
+        
+        # 3. 쿼리 실행
+        results = curr_collection.query(
+            query_texts=[clean_question], 
+            n_results=3
+        )
+        
+        if not results['documents'] or not results['documents'][0]:
+            return "죄송합니다. 관련 정책 지식을 찾지 못했습니다."
+
+        # 4. Ollama 답변 생성 (여기서 clean_question을 사용함)
+        context = "\n".join(results['documents'][0])
+        prompt = f"당신은 메타 정책 전문가입니다. 참고 자료를 바탕으로 질문에 '한국어'로만 친절하게 답하세요.\n\n참고 자료:\n{context}\n\n질문: {clean_question}"
+        
+        client = ollama.Client(host='http://host.docker.internal:11434')
+        response = client.chat(model='llama3.2', messages=[
+            {'role': 'user', 'content': prompt},
+        ])
+        
+        return response['message']['content']
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc()) # 상세 에러 출력
+        return f"답변 생성 중 오류 발생: {str(e)}"
 
 if __name__ == "__main__":
-    client = ollama.Client(host='http://host.docker.internal:11434')
-    print("🤖 Playwright 기반 A1 시스템 온라인")
+    # Ollama 클라이언트 설정 (로컬 구동 시 기본 호스트 사용 가능)
+    # 도커 내부에서 외부 Ollama 접근 시 host.docker.internal 사용
+    print("🤖 Playwright 기반 A1 시스템 온라인 (48,515개 지식 장착 완료)")
 
     while True:
         user_input = input("\n💬 질문 혹은 'autostudy [URL]' (종료: exit): ").strip()
@@ -168,4 +201,6 @@ if __name__ == "__main__":
             auto_learn(url)
         else:
             print("\n🔍 검색 및 답변 생성 중...")
-            print(f"\n--- [ A1 답변 ] ---\n{ask_a1(user_input, client)}")
+            # ask_a1 함수 내에서 chroma_client를 전역으로 쓰거나 인자로 넘겨야 합니다.
+            answer = ask_a1(user_input, None) 
+            print(f"\n--- [ A1 답변 ] ---\n{answer}")
